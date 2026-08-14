@@ -33,11 +33,11 @@ pnpm test
 pnpm build
 ```
 
-`OPENAI_API_KEY` 只在 `app/api/rank/route.ts` 的服务器端读取，绝不能放进 `NEXT_PUBLIC_*`。请求使用 `store: false`；本仓不写数据库、不记录 JD 或 SKILL 日志。生产部署前仍应按组织的密钥、访问控制与数据保留规则补足保护。
+默认使用 DeepSeek V4 Flash 的 thinking mode（`deepseek-v4-flash` + `DEEPSEEK_REASONING_EFFORT=max`）；也可通过 `AI_PROVIDER=openai` 切换到 OpenAI。两类 API key 都只在 `app/api/rank/route.ts` 的服务器端读取，绝不能放进 `NEXT_PUBLIC_*`。请求不写数据库、不记录 JD 或 SKILL 日志。生产部署前仍应按组织的密钥、访问控制与数据保留规则补足保护。
 
 ## 非目标
 
-- 不提供默认“正确择业观”，也不内置任何个人权力动力学框架；
+- 不预设任何择业价值标准；排序只遵循用户明确提供的专属择业 SKILL；
 - 不做简历匹配、经历改写、岗位跟踪、投递管理、登录、云数据库或导出；
 - 不创建 shared package：当前仅通过 JSON contract 预留未来集成。
 
