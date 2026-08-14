@@ -1,15 +1,184 @@
 "use client";
 import { useMemo, useState } from "react";
+import { ConnectionSettings, useAiConnection } from "./connection-settings";
 
 type Job = { id: string; company: string; title: string; rawJd: string };
-type Result = { summary: string; ranked: { jobId: string; gate: string; gateReason: string; score: number | null; recommendation: string; topContributions: string[]; topGaps: string[]; note: string }[]; dimensions: { jobId: string; code: string; supply0to10: number; weight: number; contribution: number }[] };
-const blank = (): Job => ({ id: crypto.randomUUID(), company: "", title: "", rawJd: "" });
+type Result = {
+  summary: string;
+  ranked: {
+    jobId: string;
+    gate: string;
+    gateReason: string;
+    score: number | null;
+    recommendation: string;
+    topContributions: string[];
+    topGaps: string[];
+    note: string;
+  }[];
+  dimensions: {
+    jobId: string;
+    code: string;
+    supply0to10: number;
+    weight: number;
+    contribution: number;
+  }[];
+};
+const blank = (): Job => ({
+  id: crypto.randomUUID(),
+  company: "",
+  title: "",
+  rawJd: "",
+});
 const protocol = `请通过访谈帮助我形成一份“专属择业 SKILL”。不要替我预设什么是好职业。\n\n最终 SKILL 必须包含：\n1. 硬性否决条件（触发即淘汰）；\n2. 带权重的评价维度；\n3. 每个维度的 0 / 5 / 10 分可观察锚点；\n4. 软性扣分；\n5. 分数公式；\n6. 分数接近时的 tie-break；\n7. 信息不足时的保守处理与需要补问的信息。\n\n请先访谈，再输出可直接粘贴的 SKILL。`;
 
 export default function Home() {
-  const [skill, setSkill] = useState(""); const [jobs, setJobs] = useState<Job[]>([blank(), blank()]); const [result, setResult] = useState<Result | null>(null); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const [connection, setConnection] = useAiConnection();
+  const [skill, setSkill] = useState("");
+  const [jobs, setJobs] = useState<Job[]>([blank(), blank()]);
+  const [result, setResult] = useState<Result | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const byId = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
-  const update = (id: string, key: keyof Job, value: string) => setJobs((all) => all.map((job) => job.id === id ? { ...job, [key]: value } : job));
-  const rank = async () => { setBusy(true); setError(""); setResult(null); try { const response = await fetch("/api/rank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferenceSkill: skill, jobs }) }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error); setResult(payload.analysis); } catch (e) { setError(e instanceof Error ? e.message : "排序失败"); } finally { setBusy(false); } };
-  return <main><header><p className="eyebrow">LOCAL-FIRST DECISION TOOL</p><h1>按你的规则，决定先投哪个岗位</h1><p>粘贴一份你自己确认的择业 SKILL，再比较 2—6 份 JD。它不读取简历、不追踪投递，也不预设你的职业价值观。</p></header><section className="panel"><h2>1. 专属择业 SKILL</h2><textarea value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="粘贴你的门控、权重、0/5/10 锚点、扣分和 tie-break…" rows={15}/><details><summary>没有 SKILL？复制访谈协议</summary><pre>{protocol}</pre><button onClick={() => navigator.clipboard.writeText(protocol)}>复制协议</button></details><small>{skill.trim().length} 字（至少 200）</small></section><section><div className="section-head"><h2>2. 待比较岗位</h2><button disabled={jobs.length >= 6} onClick={() => setJobs((all) => [...all, blank()])}>添加岗位</button></div>{jobs.map((job, index) => <article className="panel job" key={job.id}><div><input value={job.company} onChange={(e) => update(job.id, "company", e.target.value)} placeholder="公司（可选）"/><input value={job.title} onChange={(e) => update(job.id, "title", e.target.value)} placeholder={`岗位 ${index + 1} 标题`}/>{jobs.length > 2 && <button className="danger" onClick={() => setJobs((all) => all.filter((item) => item.id !== job.id))}>移除</button>}</div><textarea value={job.rawJd} onChange={(e) => update(job.id, "rawJd", e.target.value)} placeholder="粘贴完整 JD 原文…" rows={10}/></article>)}</section><button className="primary" disabled={busy || skill.trim().length < 200 || jobs.some((job) => job.title.trim().length === 0 || job.rawJd.trim().length < 40)} onClick={rank}>{busy ? "正在按你的规则比较…" : "开始排序"}</button>{error && <p className="error">{error}</p>}{result && <section className="results"><h2>排序结果</h2><p>{result.summary}</p>{result.ranked.map((row, index) => { const job = byId.get(row.jobId); return <article className="panel result" key={row.jobId}><b>#{index + 1} · {job?.company || "未命名公司"} · {job?.title}</b><span className={row.gate === "淘汰" ? "rejected" : "badge"}>{row.gate === "淘汰" ? "淘汰" : `${row.score} 分 · ${row.recommendation}`}</span><p>{row.gateReason || row.note}</p><div><strong>主要贡献：</strong>{row.topContributions.join("；") || "信息不足"}</div><div><strong>主要短板：</strong>{row.topGaps.join("；") || "未发现明显短板"}</div>{row.note && <small>注：{row.note}</small>}</article>; })}</section>}</main>;
+  const update = (id: string, key: keyof Job, value: string) =>
+    setJobs((all) =>
+      all.map((job) => (job.id === id ? { ...job, [key]: value } : job)),
+    );
+  const rank = async () => {
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      const response = await fetch("/api/rank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ preferenceSkill: skill, jobs, connection: connection.apiKey.trim() ? connection : undefined }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error);
+      setResult(payload.analysis);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "排序失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <main>
+      <header>
+        <p className="eyebrow">LOCAL-FIRST DECISION TOOL</p>
+        <h1>按你的规则，决定先投哪个岗位</h1>
+        <p>
+          粘贴一份你自己确认的择业 SKILL，再比较 2—6 份
+          JD。它不读取简历、不追踪投递，也不预设你的职业价值观。
+        </p>
+      </header>
+      <ConnectionSettings connection={connection} setConnection={setConnection} />
+      <section className="panel">
+        <h2>1. 专属择业 SKILL</h2>
+        <textarea
+          value={skill}
+          onChange={(e) => setSkill(e.target.value)}
+          placeholder="粘贴你的门控、权重、0/5/10 锚点、扣分和 tie-break…"
+          rows={15}
+        />
+        <details>
+          <summary>没有 SKILL？复制访谈协议</summary>
+          <pre>{protocol}</pre>
+          <button onClick={() => navigator.clipboard.writeText(protocol)}>
+            复制协议
+          </button>
+        </details>
+        <small>{skill.trim().length} 字（至少 200）</small>
+      </section>
+      <section>
+        <div className="section-head">
+          <h2>2. 待比较岗位</h2>
+          <button
+            disabled={jobs.length >= 6}
+            onClick={() => setJobs((all) => [...all, blank()])}
+          >
+            添加岗位
+          </button>
+        </div>
+        {jobs.map((job, index) => (
+          <article className="panel job" key={job.id}>
+            <div>
+              <input
+                value={job.company}
+                onChange={(e) => update(job.id, "company", e.target.value)}
+                placeholder="公司（可选）"
+              />
+              <input
+                value={job.title}
+                onChange={(e) => update(job.id, "title", e.target.value)}
+                placeholder={`岗位 ${index + 1} 标题`}
+              />
+              {jobs.length > 2 && (
+                <button
+                  className="danger"
+                  onClick={() =>
+                    setJobs((all) => all.filter((item) => item.id !== job.id))
+                  }
+                >
+                  移除
+                </button>
+              )}
+            </div>
+            <textarea
+              value={job.rawJd}
+              onChange={(e) => update(job.id, "rawJd", e.target.value)}
+              placeholder="粘贴完整 JD 原文…"
+              rows={10}
+            />
+          </article>
+        ))}
+      </section>
+      <button
+        className="primary"
+        disabled={
+          busy ||
+          skill.trim().length < 200 ||
+          jobs.some(
+            (job) =>
+              job.title.trim().length === 0 || job.rawJd.trim().length < 40,
+          )
+        }
+        onClick={rank}
+      >
+        {busy ? "正在按你的规则比较…" : "开始排序"}
+      </button>
+      {error && <p className="error">{error}</p>}
+      {result && (
+        <section className="results">
+          <h2>排序结果</h2>
+          <p>{result.summary}</p>
+          {result.ranked.map((row, index) => {
+            const job = byId.get(row.jobId);
+            return (
+              <article className="panel result" key={row.jobId}>
+                <b>
+                  #{index + 1} · {job?.company || "未命名公司"} · {job?.title}
+                </b>
+                <span className={row.gate === "淘汰" ? "rejected" : "badge"}>
+                  {row.gate === "淘汰"
+                    ? "淘汰"
+                    : `${row.score} 分 · ${row.recommendation}`}
+                </span>
+                <p>{row.gateReason || row.note}</p>
+                <div>
+                  <strong>主要贡献：</strong>
+                  {row.topContributions.join("；") || "信息不足"}
+                </div>
+                <div>
+                  <strong>主要短板：</strong>
+                  {row.topGaps.join("；") || "未发现明显短板"}
+                </div>
+                {row.note && <small>注：{row.note}</small>}
+              </article>
+            );
+          })}
+        </section>
+      )}
+    </main>
+  );
 }
